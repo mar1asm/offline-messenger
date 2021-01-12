@@ -24,11 +24,48 @@ int sendConversation ( int client );
 
 /* codul de eroare returnat de anumite apeluri */
 extern int errno;
+char *this_username;
+
+int sending (
+    int sd,
+    char message[] ) { // ca sa nu scriu de 100 ori aceeasi chestie, am facut o
+		       // functie care trimite mesajul la server. returneaza 0
+		       // daca totul e ok si altceva in caz de eroare
+  int length = strlen ( message );
+  if ( write ( sd, &length, sizeof ( length ) ) <= 0 ) {
+    perror ( "[client]Eroare la write() catre server.\n" );
+    return errno;
+  }
+  if ( write ( sd, message, length ) <= 0 ) {
+    perror ( "[client]Eroare la write() catre server.\n" );
+    return errno;
+  }
+  return 0;
+}
+
+char *receiving ( int sd ) {
+  int length;
+  char *error = "error";
+  if ( read ( sd, &length, sizeof ( length ) ) <= 0 ) {
+    perror ( "[client]Eroare la write() catre server.\n" );
+    return error;
+  }
+
+  char *message = ( char * ) malloc ( length + 1 );
+  if ( read ( sd, message, length ) <= 0 ) {
+    perror ( "[client]Eroare la write() catre server.\n" );
+    free ( message );
+    return error;
+  }
+
+  message[ length ] = '\0';
+  return message;
+}
 
 bool connectToDatabase ( ) {
   char *host = "127.0.0.1";
   char *user = "root";
-  char *pass = "0Mid@-70";
+  char *pass = "******";
   char *database = "sys";
 
   conn = mysql_init ( NULL );
@@ -109,65 +146,38 @@ void treat ( int sd ) {
 	printf ( "[server]Asteptam mesajul...\n" ); /* s-a realizat conexiunea,
 						       se astepta mesajul */
 	fflush ( stdout );
-	int size;
-	if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-	  perror ( "[server]Eroare la read() de la client.\n" );
+	char *msg;
+	msg = receiving ( client );
+	if ( ! strcmp ( msg, "error" ) ) {
 	  close ( client ); /* inchidem conexiunea cu clientul */
 	  break;	    /* continuam sa ascultam */
 	}
 
-	char msg[ size + 1 ];
-	bzero ( msg, size );
-
-	/* citirea mesajului */
-	if ( read ( client, msg, size ) <= 0 ) {
-	  perror ( "[server]Eroare la read() de la client.\n" );
-	  close ( client ); /* inchidem conexiunea cu clientul */
-	  break;	    /* continuam sa ascultam */
-	}
-	msg[ size ] = '\0';
 	printf ( "[server]Mesajul a fost receptionat...%s\n", msg );
-	processMessage ( client, msg );
+	if ( processMessage ( client, msg ) == -4 ) {
+	  close ( client );
+	  free ( this_username );
+	  break;
+	}
       }
     }
   }
 }
 
 int signup ( int client ) {
-  int size;
-  if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
+
+  char *username;
+  if ( ! strcmp ( ( username = receiving ( client ) ), "error" ) ) {
     close ( client ); /* inchidem conexiunea cu clientul */
     return -1;	      /* continuam sa ascultam */
   }
 
-  char username[ size + 1 ];
-  bzero ( username, size );
-
-  /* citirea mesajului */
-  if ( read ( client, username, size ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client ); /* inchidem conexiunea cu clientul */
-    return -1;	      /* continuam sa ascultam */
-  }
-  username[ size ] = '\0';
-
-  if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
+  char *password;
+  if ( ! strcmp ( ( password = receiving ( client ) ), "error" ) ) {
     close ( client ); /* inchidem conexiunea cu clientul */
     return -1;	      /* continuam sa ascultam */
   }
 
-  char password[ size + 1 ];
-  bzero ( password, size );
-
-  /* citirea mesajului */
-  if ( read ( client, password, size ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client );
-    return -1;
-  }
-  password[ size ] = '\0';
   char query[ 100 ];
   strcpy ( query, "SELECT *FROM users where username =\"" );
   strcat ( query, username );
@@ -197,42 +207,17 @@ int signup ( int client ) {
 }
 
 int login ( int client ) { //-1 eroare la comunicare
-  int size;
-  if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client );
-    return -1;
-  }
+  char *username;
+  printf ( "am ajuns aici\n" );
+  if ( ! strcmp ( ( username = receiving ( client ) ), "error" ) )
+    return errno;
 
-  char username[ size + 1 ];
-  bzero ( username, size );
+  char *password;
+  if ( ! strcmp ( ( password = receiving ( client ) ), "error" ) )
+    return errno;
 
-  /* citirea mesajului */
-  if ( read ( client, username, size ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client ); /* inchidem conexiunea cu clientul */
-    return -1;	      /* continuam sa ascultam */
-  }
-  username[ size ] = '\0';
-
-  if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client ); /* inchidem conexiunea cu clientul */
-    return -1;	      /* continuam sa ascultam */
-  }
-
-  char password[ size + 1 ];
-  bzero ( password, size );
-
-  /* citirea mesajului */
-  if ( read ( client, password, size ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client ); /* inchidem conexiunea cu clientul */
-    return -1;	      /* continuam sa ascultam */
-  }
-  password[ size ] = '\0';
   char query[ 100 ];
-  strcpy ( query, "SELECT *FROM users where username =\"" );
+  strcpy ( query, "SELECT * FROM users where username =\"" );
   strcat ( query, username );
   strcat ( query, "\" and password=\"" );
   strcat ( query, password );
@@ -255,6 +240,9 @@ int login ( int client ) { //-1 eroare la comunicare
   strcpy ( query, "UPDATE users SET connected = 1 WHERE username  =\"" );
   strcat ( query, username );
   strcat ( query, "\"" );
+  this_username = ( char * ) malloc ( strlen ( username ) + 1 );
+  strcpy ( this_username, username );
+  this_username[ strlen ( username ) ] = '\0';
   if ( mysql_query ( conn, query ) ) {
     fprintf ( stderr, "%s\n", mysql_error ( conn ) );
     exit ( 1 );
@@ -263,66 +251,36 @@ int login ( int client ) { //-1 eroare la comunicare
 }
 
 int processMessage ( int client, char message[] ) {
+
   if ( ! strcmp ( message, "login" ) ) {
     int temp = login ( client );
     if ( temp == -2 ) {
-      char answer[] = "userNotFound";
-      int size = strlen ( answer );
-      if ( write ( client, &size, sizeof ( size ) ) <= 0 ) {
-	perror ( "[server]Eroare la write() la client.\n" );
+      if ( sending ( client, "userNotFound" ) )
 	return -1;
-      }
-      if ( write ( client, answer, size ) <= 0 ) {
-	perror ( "[server]Eroare la write() la client.\n" );
-	return -1;
-      }
-      return -2;
+      return 0;
     }
     if ( temp == 0 ) {
-      char answer[] = "loggedIn";
-      int size = strlen ( answer );
-      if ( write ( client, &size, sizeof ( size ) ) <= 0 ) {
-	perror ( "[server]Eroare la write() la client.\n" );
+      if ( sending ( client, "loggedIn" ) )
 	return -1;
-      }
-      if ( write ( client, answer, size ) <= 0 ) {
-	perror ( "[server]Eroare la write() la client.\n" );
-	return -1;
-      }
+      return 0;
     }
-
-    return -1;
+    return 0;
   }
 
   if ( ! strcmp ( message, "signup" ) ) {
     int temp = signup ( client );
     if ( temp == -2 ) {
-      char answer[] = "alreadyExists";
-      int size = strlen ( answer );
-      if ( write ( client, &size, sizeof ( size ) ) <= 0 ) {
-	perror ( "[server]Eroare la write() la client.\n" );
+      if ( sending ( client, "alreadyExists" ) )
 	return -1;
-      }
-      if ( write ( client, answer, size ) <= 0 ) {
-	perror ( "[server]Eroare la write() la client.\n" );
-	return -1;
-      }
-      return -2;
+      return 0;
     }
     if ( temp == 0 ) {
-      char answer[] = "signedup";
-      int size = strlen ( answer );
-      if ( write ( client, &size, sizeof ( size ) ) <= 0 ) {
-	perror ( "[server]Eroare la write() la client.\n" );
+      if ( sending ( client, "signedup" ) )
 	return -1;
-      }
-      if ( write ( client, answer, size ) <= 0 ) {
-	perror ( "[server]Eroare la write() la client.\n" );
-	return -1;
-      }
+      return 0;
     }
 
-    return -1;
+    return 0;
   }
 
   if ( ! strcmp ( message, "show online" ) ) {
@@ -360,25 +318,18 @@ int sendOnlineUsers ( int client ) {
   res = mysql_store_result ( conn );
 
   int numberOfUsers = mysql_num_rows ( res );
-
-  if ( write ( client, &numberOfUsers, sizeof ( numberOfUsers ) ) <= 0 ) {
-    perror ( "[server]Eroare la write() la client.\n" );
-    return -1;
+  if ( write ( client, &numberOfUsers, sizeof ( numberOfUsers ) ) < 0 ) {
+    perror ( "[client] Eroare la read de la server" );
+    return errno;
   }
 
   while ( ( row = mysql_fetch_row ( res ) ) != 0 ) {
-    int size = strlen ( row[ 1 ] );
+    int length = strlen ( row[ 1 ] );
     char username[ strlen ( row[ 1 ] ) + 1 ];
     strcpy ( username, row[ 1 ] );
     username[ strlen ( username ) ] = '\0';
-    if ( write ( client, &size, sizeof ( size ) ) <= 0 ) {
-      perror ( "[server]Eroare la write() la client.\n" );
-      return -1;
-    }
-    if ( write ( client, username, size ) <= 0 ) {
-      perror ( "[server]Eroare la write() la client.\n" );
-      return -1;
-    }
+    if ( sending ( client, username ) )
+      return errno;
   }
   mysql_free_result ( res );
   return 0;
@@ -394,47 +345,29 @@ int sendAllUsers ( int client ) {
   res = mysql_store_result ( conn );
 
   int numberOfUsers = mysql_num_rows ( res );
-
-  if ( write ( client, &numberOfUsers, sizeof ( numberOfUsers ) ) <= 0 ) {
-    perror ( "[server]Eroare la write() la client.\n" );
-    return -1;
+  if ( write ( client, &numberOfUsers, sizeof ( numberOfUsers ) ) < 0 ) {
+    perror ( "[client] Eroare la read de la server" );
+    return errno;
   }
 
   while ( ( row = mysql_fetch_row ( res ) ) != 0 ) {
-    int size = strlen ( row[ 1 ] );
+    int length = strlen ( row[ 1 ] );
     char username[ strlen ( row[ 1 ] ) + 1 ];
     strcpy ( username, row[ 1 ] );
     username[ strlen ( username ) ] = '\0';
-    if ( write ( client, &size, sizeof ( size ) ) <= 0 ) {
-      perror ( "[server]Eroare la write() la client.\n" );
-      return -1;
-    }
-    if ( write ( client, username, size ) <= 0 ) {
-      perror ( "[server]Eroare la write() la client.\n" );
-      return -1;
-    }
+    if ( sending ( client, username ) )
+      return errno;
   }
   mysql_free_result ( res );
   return 0;
 }
 int sendUnreadMessages ( int client ) {
-  int size;
-  if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client );
-    return -1;
-  }
 
-  char username[ size + 1 ];
-  bzero ( username, size );
-
-  /* citirea mesajului */
-  if ( read ( client, username, size ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
+  char *username;
+  if ( ! strcmp ( ( username = receiving ( client ) ), "error" ) ) {
     close ( client );
-    return -1;
+    return errno;
   }
-  username[ size ] = '\0';
 
   char query[ 100 ];
   strcpy ( query, "SELECT * FROM messages where `to`=\"" );
@@ -447,95 +380,63 @@ int sendUnreadMessages ( int client ) {
 
   res = mysql_store_result ( conn );
 
-  int numberOfUsers = mysql_num_rows ( res );
+  int numberOfMessages = mysql_num_rows ( res );
 
-  if ( write ( client, &numberOfUsers, sizeof ( numberOfUsers ) ) <= 0 ) {
-    perror ( "[server]Eroare la write() la client.\n" );
-    return -1;
+  if ( write ( client, &numberOfMessages, sizeof ( numberOfMessages ) ) < 0 ) {
+    perror ( "[client] Eroare la read de la server" );
+    return errno;
   }
 
   while ( ( row = mysql_fetch_row ( res ) ) != 0 ) {
-    int size = strlen ( row[ 1 ] );
     char username[ strlen ( row[ 1 ] ) + 1 ];
     strcpy ( username, row[ 1 ] );
     username[ strlen ( username ) ] = '\0';
-    if ( write ( client, &size, sizeof ( size ) ) <= 0 ) {
-      perror ( "[server]Eroare la write() la client.\n" );
-      return -1;
-    }
-    if ( write ( client, username, size ) <= 0 ) {
-      perror ( "[server]Eroare la write() la client.\n" );
-      return -1;
+    if ( sending ( client, username ) )
+      return errno;
+
+    char message[ strlen ( row[ 3 ] ) + 1 ];
+    strcpy ( message, row[ 3 ] );
+    message[ strlen ( message ) ] = '\0';
+    if ( sending ( client, message ) )
+      return errno;
+    char *answer;
+    if ( ! strcmp ( ( answer = receiving ( client ) ), "error" ) ) {
+      close ( client );
+      return errno;
     }
 
-    size = strlen ( row[ 3 ] );
-    char message[ strlen ( row[ 1 ] ) + 1 ];
-    strcpy ( message, row[ 1 ] );
-    message[ strlen ( message ) ] = '\0';
-    if ( write ( client, &size, sizeof ( size ) ) <= 0 ) {
-      perror ( "[server]Eroare la write() la client.\n" );
-      return -1;
+    char query[ 100 ];
+    strcpy ( query, " UPDATE messages SET `read` = 1 WHERE `ID` =" );
+    strcat ( query, row[ 0 ] );
+
+    if ( mysql_query ( conn, query ) ) {
+      fprintf ( stderr, "%s\n", mysql_error ( conn ) );
+      exit ( 1 );
     }
-    if ( write ( client, message, size ) <= 0 ) {
-      perror ( "[server]Eroare la write() la client.\n" );
-      return -1;
-    }
+
+    if ( ! strcmp ( answer, "send" ) )
+      sendMessage ( client );
   }
   mysql_free_result ( res );
   return 0;
 }
 int sendMessage ( int client ) {
-  int size;
-  if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
+  char *fromUsername;
+  if ( ! strcmp ( ( fromUsername = receiving ( client ) ), "error" ) ) {
     close ( client );
-    return -1;
+    return errno;
+  }
+  char *toUsername;
+  if ( ! strcmp ( ( toUsername = receiving ( client ) ), "error" ) ) {
+    close ( client );
+    return errno;
   }
 
-  char fromUsername[ size + 1 ];
-  bzero ( fromUsername, size );
-
-  /* citirea mesajului */
-  if ( read ( client, fromUsername, size ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
+  char *message;
+  if ( ! strcmp ( ( message = receiving ( client ) ), "error" ) ) {
     close ( client );
-    return -1;
+    return errno;
   }
-  fromUsername[ size ] = '\0';
-
-  if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client );
-    return -1;
-  }
-
-  char toUsername[ size + 1 ];
-  bzero ( toUsername, size );
-
-  /* citirea mesajului */
-  if ( read ( client, toUsername, size ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client );
-    return -1;
-  }
-  toUsername[ size ] = '\0';
-
-  if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client );
-    return -1;
-  }
-
-  char message[ size + 1 ];
-  bzero ( message, size );
-
-  /* citirea mesajului */
-  if ( read ( client, message, size ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client );
-    return -1;
-  }
-  message[ size ] = '\0';
 
   char query[ 100 ];
   strcpy ( query, "INSERT INTO messages (`from`, `to`, message) VALUES ('" );
@@ -547,83 +448,83 @@ int sendMessage ( int client ) {
   strcat ( query, "')" );
   if ( mysql_query ( conn, query ) ) {
     fprintf ( stderr, "%s\n", mysql_error ( conn ) );
+    sending ( client, "error" );
     exit ( 1 );
+  }
+  if ( sending ( client, "sent" ) ) {
+    return perror;
   }
 }
 int sendConversation ( int client ) {
-  int size;
-  if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
+  char *fromUsername;
+  if ( ! strcmp ( ( fromUsername = receiving ( client ) ), "error" ) ) {
     close ( client );
-    return -1;
+    return errno;
+  }
+  char *toUsername;
+  if ( ! strcmp ( ( toUsername = receiving ( client ) ), "error" ) ) {
+    close ( client );
+    return errno;
   }
 
-  char fromUsername[ size + 1 ];
-  bzero ( fromUsername, size );
-
-  /* citirea mesajului */
-  if ( read ( client, fromUsername, size ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client );
-    return -1;
-  }
-  fromUsername[ size ] = '\0';
-
-  if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client );
-    return -1;
+  char query[ 100 ];
+  strcpy ( query, "SELECT * FROM messages where `to`=\"" );
+  strcat ( query, toUsername );
+  strcat ( query, "\" and `from`=\"" );
+  strcat ( query, fromUsername );
+  strcat ( query, "\")" );
+  if ( mysql_query ( conn, query ) ) {
+    fprintf ( stderr, "%s\n", mysql_error ( conn ) );
+    exit ( 1 );
   }
 
-  char toUsername[ size + 1 ];
-  bzero ( toUsername, size );
+  res = mysql_store_result ( conn );
 
-  /* citirea mesajului */
-  if ( read ( client, toUsername, size ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client );
-    return -1;
+  int numberOfMessages = mysql_num_rows ( res );
+  if ( write ( client, &numberOfMessages, sizeof ( numberOfMessages ) ) < 0 ) {
+    perror ( "[server] Eroare la read de la client\n" );
+    return perror;
   }
-  toUsername[ size ] = '\0';
 
-  if ( read ( client, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[server]Eroare la read() de la client.\n" );
-    close ( client );
-    return -1;
+  while ( ( row = mysql_fetch_row ( res ) ) != 0 ) {
+    char sender[ strlen ( row[ 1 ] ) + 1 ];
+    strcpy ( sender, row[ 1 ] );
+
+    char message[ strlen ( row[ 3 ] ) + 1 ];
+    strcpy ( message, row[ 3 ] );
+
+    char query[ 100 ];
+    strcpy ( query, " UPDATE messages SET `read` = 1 WHERE `ID` =" );
+    strcat ( query, row[ 0 ] );
+
+    if ( mysql_query ( conn, query ) ) {
+      fprintf ( stderr, "%s\n", mysql_error ( conn ) );
+      exit ( 1 );
+    }
+    if ( sending ( client, sender ) )
+      return errno;
+    if ( sending ( client, message ) )
+      return errno;
   }
+  mysql_free_result ( res );
 }
 
 int main ( ) {
-  char *err_msg = 0;
-  char str[ 100 ];
-  char sql[ 100 ];
 
   int sd;
 
-  if ( ! connectToDatabase ( ) )
+  if ( ! connectToDatabase ( ) ) {
+    printf ( "Nu s-a putut realiza conexiunea la baza de date\n" );
     exit ( 1 );
+  } else {
+    printf ( "S-a realizat conexiunea cu baza de date\n" );
+  }
   if ( startServer ( &sd ) ) {
+    printf ( "Nu s-a putut porni serverul\n" );
     exit ( 2 );
+  } else {
+    printf ( "Serverul a pornit\n" );
   }
 
   treat ( sd );
-
-  // printf ( "Am ajuns aici\n" ); so far so good
-
-  /*send SQL query*/
-  /*  if ( mysql_query ( conn, "SELECT * FROM users" ) ) {
-     fprintf ( stderr, "%s\n", mysql_error ( conn ) );
-     exit ( 1 );
-   }
-
-   res = mysql_store_result ( conn );
-
-   while ( ( row = mysql_fetch_row ( res ) ) != 0 ) {
-     char *entry;
-     entry = row[ 1 ];
-     printf ( "%s\n", entry );
-   }
-
-   /* Free results when done
-   mysql_free_result ( res ); */
 }
