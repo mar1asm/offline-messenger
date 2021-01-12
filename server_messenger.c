@@ -62,7 +62,6 @@ char *receiving ( int sd ) {
   return message;
 }
 
-
 bool connectToDatabase ( ) {
   char *host = "127.0.0.1";
   char *user = "root";
