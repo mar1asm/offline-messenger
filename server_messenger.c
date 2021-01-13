@@ -332,7 +332,8 @@ int sendOnlineUsers ( int client, MYSQL *conn ) {
   MYSQL_RES *res;
   MYSQL_ROW row;
   char query[ 100 ];
-  strcpy ( query, "SELECT *FROM users where connected is not NULL" );
+  strcpy ( query,
+	   "SELECT *FROM users where connected is not NULL and connected!=0" );
   if ( mysql_query ( conn, query ) ) {
     fprintf ( stderr, "%s\n", mysql_error ( conn ) );
     exit ( 1 );
@@ -418,6 +419,12 @@ int sendUnreadMessages ( int client, MYSQL *conn ) {
     strcpy ( username, row[ 1 ] );
     username[ strlen ( username ) ] = '\0';
     if ( sending ( client, username ) )
+      return errno;
+
+    char sentAt[ strlen ( row[ 5 ] ) + 1 ];
+    strcpy ( sentAt, row[ 5 ] );
+    sentAt[ strlen ( sentAt ) ] = '\0';
+    if ( sending ( client, sentAt ) )
       return errno;
 
     char message[ strlen ( row[ 3 ] ) + 1 ];
@@ -530,7 +537,7 @@ int sendConversation ( int client, MYSQL *conn ) {
   strcat ( query, fromUsername );
   strcat ( query, "\" and `from`=\"" );
   strcat ( query, toUsername );
-  strcat ( query, "\")" );
+  strcat ( query, "\")  ORDER BY `time`" );
 
   printf ( "%s", query );
 
@@ -554,6 +561,10 @@ int sendConversation ( int client, MYSQL *conn ) {
     char message[ strlen ( row[ 3 ] ) + 1 ];
     strcpy ( message, row[ 3 ] );
 
+    char sentAt[ strlen ( row[ 5 ] ) + 1 ];
+    strcpy ( sentAt, row[ 5 ] );
+    sentAt[ strlen ( sentAt ) ] = '\0';
+
     char query[ 100 ];
     strcpy ( query, " UPDATE messages SET `read` = 1 WHERE `ID` =" );
     strcat ( query, row[ 0 ] );
@@ -563,6 +574,8 @@ int sendConversation ( int client, MYSQL *conn ) {
       exit ( 1 );
     }
     if ( sending ( client, sender ) )
+      return errno;
+    if ( sending ( client, sentAt ) )
       return errno;
     if ( sending ( client, message ) )
       return errno;

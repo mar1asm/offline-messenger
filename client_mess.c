@@ -6,7 +6,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <termios.h>
 #include <unistd.h>
+
+#define RED "\x1B[31m"
+#define GREEN "\x1B[32m"
+#define BLUE "\x1B[34m"
+#define NORMAL "\x1B[0m"
+#define YEL "\x1b[33m"
+#define BYEL "\x1b[43m"
+#define CYAN "\x1b[36m"
 
 extern int errno;
 
@@ -20,11 +29,11 @@ int sending (
 		       // daca totul e ok si altceva in caz de eroare
   int size = strlen ( message );
   if ( write ( sd, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[client]Eroare la write() catre server.\n" );
+    perror ( RED " [client]Eroare la write() catre server.\n" NORMAL );
     return errno;
   }
   if ( write ( sd, message, size ) <= 0 ) {
-    perror ( "[client]Eroare la write() catre server.\n" );
+    perror ( RED "[client]Eroare la write() catre server.\n" NORMAL );
     return errno;
   }
   return 0;
@@ -34,13 +43,13 @@ char *receiving ( ) {
   int size;
   char *error = "error";
   if ( read ( sd, &size, sizeof ( size ) ) <= 0 ) {
-    perror ( "[client]Eroare la write() catre server.\n" );
+    perror ( RED "[client]Eroare la write() catre server.\n" NORMAL );
     return error;
   }
 
   char *message = ( char * ) malloc ( size + 1 );
   if ( read ( sd, message, size ) <= 0 ) {
-    perror ( "[client]Eroare la write() catre server.\n" );
+    perror ( RED "[client]Eroare la write() catre server.\n" NORMAL );
     free ( message );
     return error;
   }
@@ -56,15 +65,28 @@ int login ( int *loggedIn ) {
   printf ( "Your username:" );
   fflush ( stdout );
   read ( 0, username, 100 );
-
   username[ strlen ( username ) - 1 ] = '\0';
-  char password[ 100 ];
-  bzero ( password, 100 );
-  printf ( "Your password:" ); // add terminos ca sa nu se vada parola
-  fflush ( stdout );
-  read ( 0, password, 100 );
 
-  password[ strlen ( password ) - 1 ] = '\0';
+  static struct termios old_terminal;
+  static struct termios new_terminal;
+  tcgetattr ( STDIN_FILENO, &old_terminal );
+  new_terminal = old_terminal;
+  new_terminal.c_lflag &= ~( ECHO );
+  tcsetattr ( STDIN_FILENO, TCSANOW, &new_terminal );
+
+  char password[ 100 ];
+  printf ( "Your password: " );
+  bzero ( password, 100 );
+  fflush ( stdout );
+  if ( fgets ( password, BUFSIZ, stdin ) == NULL )
+    password[ 0 ] = '\0';
+  else
+    password[ strlen ( password ) - 1 ] = '\0';
+  tcsetattr ( STDIN_FILENO, TCSANOW, &old_terminal );
+  printf (
+      "\nIn scopul prezentarii proiectului, parola introdusa a fost: %s \n",
+      password );
+
   if ( sending ( "login" ) )
     return errno;
 
@@ -83,9 +105,9 @@ int login ( int *loggedIn ) {
     myUsername = ( char * ) malloc ( strlen ( username ) + 1 );
     strcpy ( myUsername, username );
     myUsername[ strlen ( username ) ] = '\0';
-    printf ( "Te-ai conectat cu succes la server\n" );
+    printf ( GREEN "Te-ai conectat cu succes la server\n" NORMAL );
   } else {
-    printf ( "Date de conectare gresite\n" );
+    printf ( RED "Date de conectare gresite\n" NORMAL );
   }
   return 0;
 }
@@ -100,13 +122,42 @@ int signup ( ) { // todo: sa introduc de 2 ori parola si sa apara cu stelute sau
   read ( 0, username, 100 );
   username[ strlen ( username ) - 1 ] = '\0';
 
+  static struct termios old_terminal;
+  static struct termios new_terminal;
+  tcgetattr ( STDIN_FILENO, &old_terminal );
+  new_terminal = old_terminal;
+  new_terminal.c_lflag &= ~( ECHO );
+  tcsetattr ( STDIN_FILENO, TCSANOW, &new_terminal );
+
   // parola
   char password[ 100 ];
-  printf ( "Your password:" );
+  printf ( "Your password: " );
   bzero ( password, 100 );
   fflush ( stdout );
-  read ( 0, password, 100 );
-  password[ strlen ( password ) - 1 ] = '\0';
+  if ( fgets ( password, BUFSIZ, stdin ) == NULL )
+    password[ 0 ] = '\0';
+  else
+    password[ strlen ( password ) - 1 ] = '\0';
+
+  printf ( "\nConfirm password: " );
+  char confirmPassword[ 100 ];
+  bzero ( confirmPassword, 100 );
+  fflush ( stdout );
+  if ( fgets ( confirmPassword, BUFSIZ, stdin ) == NULL )
+    confirmPassword[ 0 ] = '\0';
+  else
+    confirmPassword[ strlen ( confirmPassword ) - 1 ] = '\0';
+
+  printf ( "\n In scopul prezentarii proiectului, parolele introduse au fost: "
+	   "%s , %s\n",
+	   password, confirmPassword );
+
+  tcsetattr ( STDIN_FILENO, TCSANOW, &old_terminal );
+
+  if ( strcmp ( password, confirmPassword ) ) {
+    printf ( RED "Parolele introduse nu sunt la fel!\n" NORMAL );
+    return 0;
+  }
 
   if ( sending ( "signup" ) )
     return errno;
@@ -122,9 +173,9 @@ int signup ( ) { // todo: sa introduc de 2 ori parola si sa apara cu stelute sau
     return errno;
 
   if ( ! strcmp ( answer, "signedup" ) ) {
-    printf ( "Cont creat cu success\n" );
+    printf ( GREEN "Cont creat cu success\n" NORMAL );
   } else {
-    printf ( "Exista deja un user cu acelasi username\n" );
+    printf ( RED "Exista deja un user cu acelasi username\n" NORMAL );
   }
   return 0;
 }
@@ -136,7 +187,7 @@ int showAllUsers ( ) {
 
   int numberOfUsers;
   if ( read ( sd, &numberOfUsers, sizeof ( numberOfUsers ) ) < 0 ) {
-    perror ( "[client] Eroare la read de la server" );
+    perror ( RED "[client] Eroare la read de la server" NORMAL );
     return errno;
   }
 
@@ -146,7 +197,7 @@ int showAllUsers ( ) {
     char *user;
     if ( ! strcmp ( ( user = receiving ( ) ), "error" ) )
       return errno;
-    printf ( "%s\n", user );
+    printf ( BLUE "%s\n" NORMAL, user );
   }
   return 0;
 }
@@ -157,7 +208,7 @@ int showOnlineUsers ( ) {
 
   int numberOfUsers;
   if ( read ( sd, &numberOfUsers, sizeof ( numberOfUsers ) ) < 0 ) {
-    perror ( "[client] Eroare la read de la server" );
+    perror ( RED "[client] Eroare la read de la server" NORMAL );
     return errno;
   }
 
@@ -169,6 +220,7 @@ int showOnlineUsers ( ) {
       return errno;
     printf ( "%s\n", user );
   }
+  printf ( "\n" );
   return 0;
 }
 
@@ -180,19 +232,25 @@ int requestUnreadMessages ( ) {
 
   int numberOfNewMessages;
   if ( read ( sd, &numberOfNewMessages, sizeof ( numberOfNewMessages ) ) < 0 ) {
-    perror ( "[client] Eroare la read de la server" );
+    perror ( RED "[client] Eroare la read de la server" NORMAL );
     return errno;
   }
-  printf ( "Ai %d mesaje noi.\n", numberOfNewMessages );
+
+  printf ( YEL "Ai %d mesaje noi.\n" NORMAL, numberOfNewMessages );
   for ( int i = 0; i < numberOfNewMessages; i++ ) {
     char *user;
     if ( ! strcmp ( ( user = receiving ( ) ), "error" ) )
       return errno;
-    printf ( "Ai un mesaj nou de la %s\n", user );
+    char *sentAt;
+    if ( ! strcmp ( ( sentAt = receiving ( ) ), "error" ) )
+      return errno;
+    printf ( "Ai un mesaj nou de la " YEL "%s" NORMAL " trimis la " YEL
+	     "%s" NORMAL "\n",
+	     user, sentAt );
     char *message;
     if ( ! strcmp ( ( message = receiving ( ) ), "error" ) )
       return errno;
-    printf ( "Mesajul este:\n%s\n", message );
+    printf ( "Mesajul este:\n" YEL "%s" NORMAL "\n", message );
     int ok = 0;
     do {
       printf ( "Doresti sa raspunzi? yes/no\n" );
@@ -213,9 +271,6 @@ int requestUnreadMessages ( ) {
 	if ( sending ( "send" ) )
 	  return errno;
 
-	printf ( "my username: %s\n", myUsername );
-	printf ( "others username: %s\n", user );
-
 	if ( sending ( myUsername ) )
 	  return errno;
 
@@ -230,10 +285,12 @@ int requestUnreadMessages ( ) {
 	  return errno;
 
 	if ( ! strcmp ( answerFromServer, "sent" ) ) {
-	  printf ( "Mesaj trimis cu succes\n" );
+	  printf ( GREEN "Mesaj trimis cu succes\n" NORMAL );
 	} else {
-	  printf ( "Eroare la trimiterea mesajului catre utilizatorul %s\n",
-		   user );
+	  printf (
+	      RED
+	      "Eroare la trimiterea mesajului catre utilizatorul %s\n" NORMAL,
+	      user );
 	}
       }
 
@@ -281,9 +338,10 @@ int sendMessageToClient ( ) {
     return errno;
 
   if ( ! strcmp ( answer, "sent" ) ) {
-    printf ( "Mesaj trimis cu succes\n" );
+    printf ( GREEN "Mesaj trimis cu succes\n" NORMAL );
   } else {
-    printf ( "Eroare la trimiterea mesajului catre utilizatorul %s\n",
+    printf ( RED
+	     "Eroare la trimiterea mesajului catre utilizatorul %s\n " NORMAL,
 	     sendToUsername );
   }
   return 0;
@@ -305,7 +363,7 @@ int requestConversation ( ) {
     return errno;
   int numberOfMessages;
   if ( ( read ( sd, &numberOfMessages, sizeof ( numberOfMessages ) ) ) < 0 ) {
-    perror ( "[client] Eroare la read de la server" );
+    perror ( RED "[client] Eroare la read de la server" NORMAL );
     return errno;
   }
 
@@ -313,10 +371,14 @@ int requestConversation ( ) {
     char *sender;
     if ( ! strcmp ( ( sender = receiving ( ) ), "error" ) )
       return errno;
+    char *sentAt;
+    if ( ! strcmp ( ( sentAt = receiving ( ) ), "error" ) )
+      return errno;
     char *chatMessage;
     if ( ! strcmp ( ( chatMessage = receiving ( ) ), "error" ) )
       return errno;
-    printf ( "%s: %s\n", sender, chatMessage );
+    printf ( YEL "%s:" NORMAL " %s (at: " YEL "%s" NORMAL ")\n", sender,
+	     chatMessage, sentAt );
   }
   return 0;
 }
@@ -328,14 +390,14 @@ int main ( int argc, char *argv[] ) {
   int quitted = 0;
 
   if ( argc != 3 ) {
-    printf ( "Sintaxa: %s <adresa_server> <port>\n", argv[ 0 ] );
+    printf ( RED "Sintaxa: %s <adresa_server> <port>\n" NORMAL, argv[ 0 ] );
     return -1;
   }
 
   port = atoi ( argv[ 2 ] ); /* stabilim portul */
 
   if ( ( sd = socket ( AF_INET, SOCK_STREAM, 0 ) ) == -1 ) {
-    perror ( "Eroare la socket().\n" );
+    perror ( RED "Eroare la socket().\n" NORMAL );
     return errno;
   }
 
@@ -345,23 +407,24 @@ int main ( int argc, char *argv[] ) {
 
   if ( connect ( sd, ( struct sockaddr * ) &server,
 		 sizeof ( struct sockaddr ) ) == -1 ) {
-    perror ( "[client]Eroare la connect().\n" );
+    perror ( RED "[client]Eroare la connect().\n" NORMAL );
     return errno;
   }
 
   while ( ! quitted ) {
     printf ( "Connected successfully;\n" );
-    printf ( "===== Wellcome to your Messenger ! =====\n" );
+    printf ( "===== Welcome to your Messenger ! =====\n" );
     printf ( "          MENU                \n" );
 
     while ( ! loggedIn ) {
       printf ( "         Choose your action :            \n" );
-      printf ( "1.Login\n" );
-      printf ( "2.Sign up\n" );
-      printf ( "3.Exit\n" );
+      printf ( CYAN "1.Login\n" NORMAL );
+      printf ( CYAN "2.Signup\n" NORMAL );
+      printf ( CYAN "3.Exit\n" NORMAL );
+      printf ( "\n" );
 
       bzero ( command, 100 );
-      printf ( "Introduce your command: " );
+      printf ( YEL ">" NORMAL );
       fflush ( stdout );
       // citirea de la tastatura
       read ( 0, command, 100 );
@@ -387,16 +450,18 @@ int main ( int argc, char *argv[] ) {
 
     while ( loggedIn ) {
       printf ( "         Choose your action :            \n" );
-      printf ( "1.All\t See all users\n" );
-      printf ( "2.Online\t See online users\n" );
-      printf ( "3.Unread\t See unread messages\n" );
-      printf ( "4.Send\t Send a message\n" );
-      printf ( "5.Conv\t Asta e ca sa vezi conv cu un user\n" );
-      printf ( "6.Logout\t Te scote din cont dar nu termina programul\n" );
-      printf ( "7.Exit\t Termina programul.\n" );
+      printf ( "1. " CYAN "All\t\t" NORMAL "See all users\n" );
+      printf ( "2. " CYAN "Online\t" NORMAL "See online users\n" );
+      printf ( "3. " CYAN "Unread\t" NORMAL "See unread messages\n" );
+      printf ( "4. " CYAN "Send\t\t" NORMAL "Send a message\n" );
+      printf ( "5. " CYAN "Conv\t\t" NORMAL
+	       "Asta e ca sa vezi conv cu un user\n" );
+      printf ( "6. " CYAN "Logout\t" NORMAL
+	       "Te scote din cont dar nu termina programul\n" );
+      printf ( "7. " CYAN "Exit\t\t" NORMAL "Termina programul.\n" );
 
       bzero ( command, 100 );
-      printf ( "Introduce your command: " );
+      printf ( YEL "%s>" NORMAL, myUsername );
       fflush ( stdout );
       // citirea de la tastatura
       read ( 0, command, 100 );
