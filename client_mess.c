@@ -426,6 +426,7 @@ int main ( int argc, char *argv[] ) {
 	  return errno;
       }
       if ( ! strcmp ( command, "Logout" ) ) {
+	sending ( "exit" );
 	loggedIn = 0;
       }
 
