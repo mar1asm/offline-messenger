@@ -12,15 +12,12 @@
 
 /* portul folosit */
 #define PORT 2025
-MYSQL_RES *res;
-MYSQL_ROW row;
-MYSQL *conn;
 
-int sendOnlineUsers ( int client );
-int sendAllUsers ( int client );
-int sendUnreadMessages ( int client );
-int sendMessage ( int client );
-int sendConversation ( int client );
+int sendOnlineUsers ( int client, MYSQL * );
+int sendAllUsers ( int client, MYSQL * );
+int sendUnreadMessages ( int client, MYSQL * );
+int sendMessage ( int client, MYSQL * );
+int sendConversation ( int client, MYSQL * );
 
 /* codul de eroare returnat de anumite apeluri */
 extern int errno;
@@ -40,6 +37,7 @@ int sending (
     perror ( "[client]Eroare la write() catre server.\n" );
     return errno;
   }
+  printf ( "am trimis %s\n", message );
   return 0;
 }
 
@@ -62,10 +60,12 @@ char *receiving ( int sd ) {
   return message;
 }
 
-bool connectToDatabase ( ) {
+MYSQL *connectToDatabase ( ) {
+  MYSQL_ROW row;
+  MYSQL *conn;
   char *host = "127.0.0.1";
   char *user = "root";
-  char *pass = "******";
+  char *pass = "0Mid@-70";
   char *database = "sys";
 
   conn = mysql_init ( NULL );
@@ -73,9 +73,9 @@ bool connectToDatabase ( ) {
   /* Connect to database */
   if ( ! mysql_real_connect ( conn, host, user, pass, database, 0, NULL, 0 ) ) {
     fprintf ( stderr, "%s\n", mysql_error ( conn ) );
-    return false;
+    return NULL;
   }
-  return true;
+  return conn;
 }
 
 int startServer ( int *sd ) {
@@ -107,7 +107,7 @@ int startServer ( int *sd ) {
   return 0;
 }
 
-int processMessage ( int, char[] );
+int processMessage ( int, char[], MYSQL * );
 
 void treat ( int sd ) {
   struct sockaddr_in from;
@@ -142,6 +142,11 @@ void treat ( int sd ) {
       continue;
     }
     if ( pid == 0 ) {
+      MYSQL *conn = connectToDatabase ( );
+      if ( conn == NULL ) {
+	perror ( "Eroare la baza de date" );
+	exit ( 1 );
+      }
       while ( true ) {
 	printf ( "[server]Asteptam mesajul...\n" ); /* s-a realizat conexiunea,
 						       se astepta mesajul */
@@ -150,12 +155,14 @@ void treat ( int sd ) {
 	msg = receiving ( client );
 	if ( ! strcmp ( msg, "error" ) ) {
 	  close ( client ); /* inchidem conexiunea cu clientul */
-	  break;	    /* continuam sa ascultam */
+	  mysql_close ( conn );
+	  break; /* continuam sa ascultam */
 	}
 
 	printf ( "[server]Mesajul a fost receptionat...%s\n", msg );
-	if ( processMessage ( client, msg ) == -4 ) {
+	if ( processMessage ( client, msg, conn ) == -4 ) {
 	  close ( client );
+	  mysql_close ( conn );
 	  free ( this_username );
 	  break;
 	}
@@ -164,7 +171,9 @@ void treat ( int sd ) {
   }
 }
 
-int signup ( int client ) {
+int signup ( int client, MYSQL *conn ) {
+  MYSQL_RES *res;
+  MYSQL_ROW row;
 
   char *username;
   if ( ! strcmp ( ( username = receiving ( client ) ), "error" ) ) {
@@ -206,9 +215,10 @@ int signup ( int client ) {
   return -2;
 }
 
-int login ( int client ) { //-1 eroare la comunicare
+int login ( int client, MYSQL *conn ) { //-1 eroare la comunicare
+  MYSQL_RES *res;
+  MYSQL_ROW row;
   char *username;
-  printf ( "am ajuns aici\n" );
   if ( ! strcmp ( ( username = receiving ( client ) ), "error" ) )
     return errno;
 
@@ -250,10 +260,10 @@ int login ( int client ) { //-1 eroare la comunicare
   return 0;
 }
 
-int processMessage ( int client, char message[] ) {
+int processMessage ( int client, char message[], MYSQL *conn ) {
 
   if ( ! strcmp ( message, "login" ) ) {
-    int temp = login ( client );
+    int temp = login ( client, conn );
     if ( temp == -2 ) {
       if ( sending ( client, "userNotFound" ) )
 	return -1;
@@ -268,7 +278,7 @@ int processMessage ( int client, char message[] ) {
   }
 
   if ( ! strcmp ( message, "signup" ) ) {
-    int temp = signup ( client );
+    int temp = signup ( client, conn );
     if ( temp == -2 ) {
       if ( sending ( client, "alreadyExists" ) )
 	return -1;
@@ -284,30 +294,43 @@ int processMessage ( int client, char message[] ) {
   }
 
   if ( ! strcmp ( message, "show online" ) ) {
-    if ( sendOnlineUsers ( client ) == 0 ) {
+    if ( sendOnlineUsers ( client, conn ) == 0 ) {
       return 0;
     } else {
       return -1;
     }
   }
   if ( ! strcmp ( message, "show all" ) ) {
-    if ( sendAllUsers ( client ) == 0 )
+    if ( sendAllUsers ( client, conn ) == 0 )
       return 0;
     else
       return -1;
   }
   if ( ! strcmp ( message, "unread" ) ) {
-    sendUnreadMessages ( client );
+    sendUnreadMessages ( client, conn );
   }
   if ( ! strcmp ( message, "send" ) ) {
-    sendMessage ( client );
+    sendMessage ( client, conn );
   }
   if ( ! strcmp ( message, "view" ) ) {
-    sendConversation ( client );
+    sendConversation ( client, conn );
+  }
+
+  if ( ! strcmp ( message, "exit" ) ) {
+    char query[ 100 ];
+    strcpy ( query, "UPDATE users SET connected = 0 WHERE username  =\"" );
+    strcat ( query, this_username );
+    strcat ( query, "\"" );
+    if ( mysql_query ( conn, query ) ) {
+      fprintf ( stderr, "%s\n", mysql_error ( conn ) );
+      exit ( 1 );
+    }
   }
 }
 
-int sendOnlineUsers ( int client ) {
+int sendOnlineUsers ( int client, MYSQL *conn ) {
+  MYSQL_RES *res;
+  MYSQL_ROW row;
   char query[ 100 ];
   strcpy ( query, "SELECT *FROM users where connected is not NULL" );
   if ( mysql_query ( conn, query ) ) {
@@ -334,7 +357,9 @@ int sendOnlineUsers ( int client ) {
   mysql_free_result ( res );
   return 0;
 }
-int sendAllUsers ( int client ) {
+int sendAllUsers ( int client, MYSQL *conn ) {
+  MYSQL_RES *res;
+  MYSQL_ROW row;
   char query[ 100 ];
   strcpy ( query, "SELECT * FROM users" );
   if ( mysql_query ( conn, query ) ) {
@@ -361,8 +386,9 @@ int sendAllUsers ( int client ) {
   mysql_free_result ( res );
   return 0;
 }
-int sendUnreadMessages ( int client ) {
-
+int sendUnreadMessages ( int client, MYSQL *conn ) {
+  MYSQL_RES *res;
+  MYSQL_ROW row;
   char *username;
   if ( ! strcmp ( ( username = receiving ( client ) ), "error" ) ) {
     close ( client );
@@ -415,12 +441,14 @@ int sendUnreadMessages ( int client ) {
     }
 
     if ( ! strcmp ( answer, "send" ) )
-      sendMessage ( client );
+      sendMessage ( client, conn );
   }
   mysql_free_result ( res );
   return 0;
 }
-int sendMessage ( int client ) {
+int sendMessage ( int client, MYSQL *conn ) {
+  MYSQL_RES *res;
+  MYSQL_ROW row;
   char *fromUsername;
   if ( ! strcmp ( ( fromUsername = receiving ( client ) ), "error" ) ) {
     close ( client );
@@ -438,6 +466,27 @@ int sendMessage ( int client ) {
     return errno;
   }
 
+  char query2[ 100 ];
+  strcpy ( query2, "SELECT * FROM users where username=\"" );
+  strcat ( query2, toUsername );
+  strcat ( query2, "\"" );
+
+  if ( mysql_query ( conn, query2 ) ) {
+    fprintf ( stderr, "%s\n", mysql_error ( conn ) );
+    exit ( 1 );
+  }
+
+  res = mysql_store_result ( conn );
+  int numberOfUsers = mysql_num_rows ( res );
+  if ( numberOfUsers == 0 ) {
+    if ( sending ( client, "notExisting" ) ) {
+      mysql_free_result ( res );
+      return perror;
+    }
+    mysql_free_result ( res );
+    return 0;
+  }
+
   char query[ 100 ];
   strcpy ( query, "INSERT INTO messages (`from`, `to`, message) VALUES ('" );
   strcat ( query, fromUsername );
@@ -447,15 +496,20 @@ int sendMessage ( int client ) {
   strcat ( query, message );
   strcat ( query, "')" );
   if ( mysql_query ( conn, query ) ) {
+    printf ( "am ajuns dupa query\n" );
     fprintf ( stderr, "%s\n", mysql_error ( conn ) );
-    sending ( client, "error" );
     exit ( 1 );
   }
+
   if ( sending ( client, "sent" ) ) {
+    mysql_free_result ( res );
     return perror;
   }
+  mysql_free_result ( res );
 }
-int sendConversation ( int client ) {
+int sendConversation ( int client, MYSQL *conn ) {
+  MYSQL_RES *res;
+  MYSQL_ROW row;
   char *fromUsername;
   if ( ! strcmp ( ( fromUsername = receiving ( client ) ), "error" ) ) {
     close ( client );
@@ -467,12 +521,19 @@ int sendConversation ( int client ) {
     return errno;
   }
 
-  char query[ 100 ];
-  strcpy ( query, "SELECT * FROM messages where `to`=\"" );
+  char query[ 200 ];
+  strcpy ( query, "SELECT * FROM messages where (`to`=\"" );
   strcat ( query, toUsername );
   strcat ( query, "\" and `from`=\"" );
   strcat ( query, fromUsername );
+  strcat ( query, "\") OR (`to`=\"" );
+  strcat ( query, fromUsername );
+  strcat ( query, "\" and `from`=\"" );
+  strcat ( query, toUsername );
   strcat ( query, "\")" );
+
+  printf ( "%s", query );
+
   if ( mysql_query ( conn, query ) ) {
     fprintf ( stderr, "%s\n", mysql_error ( conn ) );
     exit ( 1 );
@@ -513,12 +574,6 @@ int main ( ) {
 
   int sd;
 
-  if ( ! connectToDatabase ( ) ) {
-    printf ( "Nu s-a putut realiza conexiunea la baza de date\n" );
-    exit ( 1 );
-  } else {
-    printf ( "S-a realizat conexiunea cu baza de date\n" );
-  }
   if ( startServer ( &sd ) ) {
     printf ( "Nu s-a putut porni serverul\n" );
     exit ( 2 );

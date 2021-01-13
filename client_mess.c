@@ -213,6 +213,9 @@ int requestUnreadMessages ( ) {
 	if ( sending ( "send" ) )
 	  return errno;
 
+	printf ( "my username: %s\n", myUsername );
+	printf ( "others username: %s\n", user );
+
 	if ( sending ( myUsername ) )
 	  return errno;
 
@@ -313,8 +316,9 @@ int requestConversation ( ) {
     char *chatMessage;
     if ( ! strcmp ( ( chatMessage = receiving ( ) ), "error" ) )
       return errno;
-    printf ( "%s: %s", sender, chatMessage );
+    printf ( "%s: %s\n", sender, chatMessage );
   }
+  return 0;
 }
 
 int main ( int argc, char *argv[] ) {
@@ -423,7 +427,6 @@ int main ( int argc, char *argv[] ) {
       }
       if ( ! strcmp ( command, "Logout" ) ) {
 	loggedIn = 0;
-	break;
       }
 
       if ( ! strcmp ( command, "Exit" ) ) {
